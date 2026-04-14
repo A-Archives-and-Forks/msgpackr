@@ -29,13 +29,6 @@ var sequentialMode = false
 var inlineObjectReadThreshold = 2
 var readStruct, onLoadedStructures, onSaveState
 var BlockedFunction // we use search and replace to change the next call to BlockedFunction to avoid CSP issues for
-// no-eval build
-try {
-	new Function('')
-} catch(error) {
-	// if eval variants are not supported, do not create inline object readers ever
-	inlineObjectReadThreshold = Infinity
-}
 
 export class Unpackr {
 	constructor(options) {
@@ -508,11 +501,18 @@ function createStructureReader(structure, firstId) {
 	function readObject() {
 		// This initial function is quick to instantiate, but runs slower. After several iterations pay the cost to build the faster function
 		if (readObject.count++ > inlineObjectReadThreshold) {
-			let readObject = structure.read = (new Function('r', 'return function(){return ' + (currentUnpackr.freezeData ? 'Object.freeze' : '') +
-				'({' + structure.map(key => key === '__proto__' ? '__proto_:r()' : validName.test(key) ? key + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '})}'))(read)
+			let optimizedReadObject
+			try {
+				optimizedReadObject = structure.read = (new Function('r', 'return function(){return ' + (currentUnpackr.freezeData ? 'Object.freeze' : '') +
+					'({' + structure.map(key => key === '__proto__' ? '__proto_:r()' : validName.test(key) ? key + ':r()' : ('[' + JSON.stringify(key) + ']:r()')).join(',') + '})}'))(read)
+			} catch(error) {
+				// in CF workers, the new Function call could begin to fail at any point in time
+				inlineObjectReadThreshold = Infinity // disable going forward
+				return readObject(); // recursively try again
+			}
 			if (structure.highByte === 0)
 				structure.read = createSecondByteReader(firstId, structure.read)
-			return readObject() // second byte is already read, if there is one so immediately read object
+			return optimizedReadObject() // second byte is already read, if there is one so immediately read object
 		}
 		let object = {}
 		for (let i = 0, l = structure.length; i < l; i++) {
