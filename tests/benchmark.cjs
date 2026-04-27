@@ -57,14 +57,6 @@ if (msgpackr) {
   obj = bench('msgpackr w/ shared structures: packr.unpack(buf);', value => packr.unpack(value), buf);
   test(obj);
 
-  packr = new msgpackr.Packr({ structures: [],randomAccessStructure: true, saveStructures(structures) {
-    } })
-  buf = bench('msgpackr w/ random access structures: packr.pack(obj);', value => packr.pack(value), data);
-  //buf = bench('msgpackr w/ shared structures: packr.pack(obj);', data => {let result = packr.pack(data); packr.resetMemory(); return result;}, data);
-  console.log('buffer size', buf.length);
-  obj = bench('msgpackr w/ random access structures: packr.unpack(buf);', value => packr.unpack(value), buf);
-  test(obj);
-
   packr = new msgpackr.Packr({ useRecords: false })
   buf = bench('require("msgpackr").pack(obj);', msgpackr.pack, data);
     //buf = bench('require("msgpackr").pack(obj);', data => {let result = packr.pack(data); packr.resetMemory(); return result;}, data);
