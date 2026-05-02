@@ -1,6 +1,6 @@
-import { encode } from '../index.js'
-import { assert } from 'chai'
-import { Encoder } from '../pack.js'
+import { encode } from '../index.js';
+import { assert } from 'chai';
+import { Encoder } from '../pack.js';
 
 const tests = {
   string: 'interesting string',
@@ -11,33 +11,33 @@ const tests = {
   'many-strings': [],
   set: new Set('abcdefghijklmnopqrstuvwxyz'.split('')),
   object: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }
-}
+};
 for (let i = 0; i < 100; i++) {
-  tests['many-strings'].push('test-data-' + i)
+  tests['many-strings'].push('test-data-' + i);
 }
 
 suite('encode and decode tests with partial values', function () {
-  const encoder = new Encoder({ objectMode: true, structures: [], moreTypes: true, structuredClone: true })
+  const encoder = new Encoder({ objectMode: true, structures: [], moreTypes: true, structuredClone: true });
 
   for (const [label, testData] of Object.entries(tests)) {
     test(label, () => {
-      const encoded = encoder.encode(testData)
-      assert.isTrue(Buffer.isBuffer(encoded), 'encode returns a Buffer')
-      assert.deepStrictEqual(encoder.decode(encoded, encoded.length, true), testData, 'full buffer decodes well')
+      const encoded = encoder.encode(testData);
+      assert.isTrue(Buffer.isBuffer(encoded), 'encode returns a Buffer');
+      assert.deepStrictEqual(encoder.decode(encoded, encoded.length, true), testData, 'full buffer decodes well');
       for (let length = Math.max(1, Math.ceil(encoded.length / 2) - 40); length < Math.ceil(encoded.length / 2); length++) {
-        const firstHalf = encoded.slice(0, length)
-        let value
+        const firstHalf = encoded.slice(0, length);
+        let value;
         try {
-          value = encoder.decode(firstHalf, firstHalf.length, true)
+          value = encoder.decode(firstHalf, firstHalf.length, true);
         } catch (err) {
           if (err.incomplete !== true) {
-            assert.fail(`Should throw an error with .incomplete set to true, instead threw error <${err}>, for ${JSON.stringify(testData)} ${encoded.length}, ${length}`)
+            assert.fail(`Should throw an error with .incomplete set to true, instead threw error <${err}>, for ${JSON.stringify(testData)} ${encoded.length}, ${length}`);
           } else {
             continue; // victory! correct outcome!
           }
         }
-        assert.fail(`Should throw an error with .incomplete set to true, instead returned value ${JSON.stringify(value)}`)
+        assert.fail(`Should throw an error with .incomplete set to true, instead returned value ${JSON.stringify(value)}`);
       }
-    })
+    });
   }
-})
+});
