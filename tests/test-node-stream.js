@@ -93,6 +93,49 @@ suite('msgpackr node stream tests', function(){
 			}, 10)
 		})
 	})
+	test('error when single incomplete chunk exceeds maxIncompleteBufferSize', () => new Promise((resolve, reject) => {
+		// 0xaa = fixstr(10); only 3 bytes of string data follow — 4-byte incomplete remainder > limit of 3
+		const parseStream = new UnpackrStream({ maxIncompleteBufferSize: 3 })
+		parseStream.on('error', (error) => {
+			assert.include(error.message, 'Maximum incomplete buffer size exceeded')
+			resolve()
+		})
+		parseStream.on('data', () => {})
+		parseStream.write(Buffer.from([0xaa, 0x61, 0x62, 0x63]))
+	}))
+	test('error when accumulated incomplete chunks exceed maxIncompleteBufferSize', () => new Promise((resolve, reject) => {
+		// limit 3: first chunk leaves 3-byte remainder (ok), second chunk grows it to 5 bytes (error)
+		const parseStream = new UnpackrStream({ maxIncompleteBufferSize: 3 })
+		parseStream.on('error', (error) => {
+			assert.include(error.message, 'Maximum incomplete buffer size exceeded')
+			resolve()
+		})
+		parseStream.on('data', () => {})
+		parseStream.write(Buffer.from([0xaa, 0x61, 0x62]))
+		parseStream.write(Buffer.from([0x63, 0x64]))
+	}))
+	test('Infinity maxIncompleteBufferSize allows large buffering', () => new Promise((resolve, reject) => {
+		// fixstr "hello" split across two chunks; Infinity limit should not error
+		const parseStream = new UnpackrStream({ maxIncompleteBufferSize: Infinity })
+		parseStream.on('error', reject)
+		parseStream.on('data', (val) => {
+			assert.equal(val, 'hello')
+			resolve()
+		})
+		parseStream.write(Buffer.from([0xa5, 0x68]))
+		parseStream.write(Buffer.from([0x65, 0x6c, 0x6c, 0x6f]))
+	}))
+	test('fragmented parse within limit completes successfully', () => new Promise((resolve, reject) => {
+		// fixstr "hi" split across two chunks; 10-byte limit not exceeded
+		const parseStream = new UnpackrStream({ maxIncompleteBufferSize: 10 })
+		parseStream.on('error', reject)
+		parseStream.on('data', (val) => {
+			assert.equal(val, 'hi')
+			resolve()
+		})
+		parseStream.write(Buffer.from([0xa2, 0x68]))
+		parseStream.write(Buffer.from([0x69]))
+	}))
 	teardown(function() {
 		try {
 			fs.unlinkSync('test-output.msgpack')

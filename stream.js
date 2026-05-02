@@ -25,22 +25,15 @@ export class UnpackrStream extends Transform {
 		options.objectMode = true
 		super(options)
 		options.structures = []
-		this.maxIncompleteBufferSize = options.maxIncompleteBufferSize > -1 ? options.maxIncompleteBufferSize : 0x4000000
+		this.maxIncompleteBufferSize = options.maxIncompleteBufferSize !== undefined ? options.maxIncompleteBufferSize : 0x4000000
 		this.unpackr = options.unpackr || new Unpackr(options)
 	}
 	_transform(chunk, encoding, callback) {
 		if (this.incompleteBuffer) {
-			let chunkSize = this.incompleteBuffer.length + chunk.length
-			if (chunkSize > this.maxIncompleteBufferSize) {
-				this.incompleteBuffer = null
-				let error = new Error('Maximum incomplete buffer size exceeded')
-				if (callback) return callback(error)
-				throw error
-			}
 			chunk = Buffer.concat([this.incompleteBuffer, chunk])
 			this.incompleteBuffer = null
 		}
-		let values, streamError
+		let values
 		try {
 			values = this.unpackr.unpackMultiple(chunk)
 		} catch(error) {
@@ -48,25 +41,20 @@ export class UnpackrStream extends Transform {
 				let incompleteBuffer = chunk.slice(error.lastPosition)
 				if (incompleteBuffer.length > this.maxIncompleteBufferSize) {
 					this.incompleteBuffer = null
-					streamError = new Error('Maximum incomplete buffer size exceeded')
-				} else
-					this.incompleteBuffer = incompleteBuffer
+					return callback(new Error('Maximum incomplete buffer size exceeded'))
+				}
+				this.incompleteBuffer = incompleteBuffer
 				values = error.values
-			}
-			else
-				throw error
-		} finally {
-			for (let value of values || []) {
-				if (value === null)
-					value = this.getNullValue()
-				this.push(value)
+			} else {
+				return callback(error)
 			}
 		}
-		if (streamError) {
-			if (callback) return callback(streamError)
-			throw streamError
+		for (let value of values || []) {
+			if (value === null)
+				value = this.getNullValue()
+			this.push(value)
 		}
-		if (callback) callback()
+		callback()
 	}
 	getNullValue() {
 		return Symbol.for(null)
