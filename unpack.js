@@ -27,6 +27,7 @@ export const C1 = new C1Type();
 C1.name = 'MessagePack 0xC1';
 var sequentialMode = false;
 var inlineObjectReadThreshold = 2;
+var readStruct, onLoadedStructures, onSaveState;
 var BlockedFunction; // we use search and replace to change the next call to BlockedFunction to avoid CSP issues for
 
 export class Unpackr {
@@ -137,6 +138,8 @@ export class Unpackr {
 		}
 	}
 	_mergeStructures(loadedStructures, existingStructures) {
+		if (onLoadedStructures)
+			loadedStructures = onLoadedStructures.call(this, loadedStructures);
 		loadedStructures = loadedStructures || [];
 		if (Object.isFrozen(loadedStructures))
 			loadedStructures = loadedStructures.map(structure => structure.slice(0));
@@ -176,7 +179,15 @@ export function checkedRead(options) {
 			if (sharedLength < currentStructures.length)
 				currentStructures.length = sharedLength;
 		}
-		let result = read();
+		let result;
+		if (currentUnpackr._useStructEncoding && src[position] < 0x40 && src[position] >= 0x20 && readStruct) {
+			result = readStruct(src, position, srcEnd, currentUnpackr);
+			src = null; // dispose of this so that recursive unpack calls don't save state
+			if (!(options && options.lazy) && result)
+				result = result.toJSON();
+			position = srcEnd;
+		} else
+			result = read();
 		if (bundledStrings) { // bundled strings to skip past
 			position = bundledStrings.postBundlePosition;
 			bundledStrings = null;
@@ -1151,6 +1162,8 @@ currentExtensions[0xff] = (data) => {
 // currentExtensions[0x52] = () =>
 
 function saveState(callback) {
+	if (onSaveState)
+		onSaveState();
 	let savedSrcEnd = srcEnd;
 	let savedPosition = position;
 	let savedStringPosition = stringPosition;
@@ -1220,3 +1233,11 @@ export function roundFloat32(float32Number) {
 	let multiplier = mult10[((u8Array[3] & 0x7f) << 1) | (u8Array[2] >> 7)];
 	return ((multiplier * float32Number + (float32Number > 0 ? 0.5 : -0.5)) >> 0) / multiplier;
 }
+export function setReadStruct(updatedReadStruct, loadedStructs, savedState) {
+	readStruct = updatedReadStruct;
+	onLoadedStructures = loadedStructs;
+	onSaveState = savedState;
+}
+// Also expose as a static on Unpackr so external libraries (e.g. structon)
+// can detect hook support via the BaseClass without importing msgpackr by name.
+Unpackr.setReadStruct = setReadStruct;

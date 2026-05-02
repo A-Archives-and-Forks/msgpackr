@@ -14,6 +14,7 @@ let targetView;
 let position = 0;
 let safeEnd;
 let bundledStrings = null;
+let writeStructSlots;
 const MAX_BUNDLE_SIZE = 0x5500; // maximum characters such that the encoded bytes fits in 16 bits.
 const hasNonLatin = /[\u0080-\uFFFF]/;
 export const RECORD_SYMBOL = Symbol('record-id');
@@ -122,7 +123,14 @@ export class Packr extends Unpackr {
 				hasSharedUpdate = false;
 			let encodingError;
 			try {
-				pack(value);
+				if (writeStructSlots && packr._useStructEncoding && value && typeof value === 'object') {
+					if (value.constructor === Object) writeStruct(value); // simple object
+					else if (value.constructor !== Map && !Array.isArray(value) && !extensionClasses.some(extClass => value instanceof extClass)) {
+						// allow user classes, if they don't need special handling (but do use toJSON if available)
+						writeStruct(value.toJSON ? value.toJSON() : value);
+					} else pack(value);
+				} else
+					pack(value);
 				let lastBundle = bundledStrings;
 				if (bundledStrings)
 					writeBundles(start, pack, 0);
@@ -347,7 +355,7 @@ export class Packr extends Unpackr {
 			} else if (type === 'number') {
 				if (value >>> 0 === value) {// positive integer, 32-bit or less
 					// positive uint
-					if (value < 0x40 || (value < 0x80 && this.useRecords === false)) {
+					if (value < 0x20 || (value < 0x80 && this.useRecords === false) || (value < 0x40 && !this._useStructEncoding)) {
 						target[position++] = value;
 					} else if (value < 0x100) {
 						target[position++] = 0xcc;
@@ -738,6 +746,24 @@ export class Packr extends Unpackr {
 			checkUseRecords(object) ? writeRecord(object) : writePlainObject(object);
 		} : writeRecord;
 
+		const writeStruct = (object) => {
+			let newPosition = writeStructSlots(object, target, start, position, structures, makeRoom, (value, newPosition, notifySharedUpdate) => {
+				if (notifySharedUpdate)
+					return hasSharedUpdate = true;
+				position = newPosition;
+				let startTarget = target;
+				pack(value);
+				resetStructures();
+				if (startTarget !== target) {
+					return { position, targetView, target }; // indicate the buffer was re-allocated
+				}
+				return position;
+			}, this);
+			if (newPosition === 0) // bail and go to a msgpack object
+				return writeObject(object);
+			position = newPosition;
+		};
+
 		const makeRoom = (end) => {
 			let newSize;
 			if (end > 0x1000000) {
@@ -857,6 +883,8 @@ export class Packr extends Unpackr {
 	clearSharedData() {
 		if (this.structures)
 			this.structures = [];
+		if (this.typedStructs)
+			this.typedStructs = [];
 	}
 }
 
@@ -1097,6 +1125,15 @@ function prepareStructures(structures, packr) {
 	};
 	return structures;
 }
+
+export function setWriteStructSlots(writeSlots, makeStructures) {
+	writeStructSlots = writeSlots;
+	if (makeStructures)
+		prepareStructures = makeStructures;
+}
+// Also expose as a static on Packr so external libraries (e.g. structon) can
+// detect hook support via the BaseClass without importing msgpackr by name.
+Packr.setWriteStructSlots = setWriteStructSlots;
 
 let defaultPackr = new Packr({ useRecords: false });
 export const pack = defaultPackr.pack;
