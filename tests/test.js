@@ -149,6 +149,30 @@ suite('msgpackr basic tests', function() {
 		const result = unpack(payload);
 		assert.notEqual(result, '/');
 	});
+	test('invalid UTF-8 continuation bytes', function () {
+		const replacement = '\uFFFD';
+		const strings = [
+			[[0xc2, 0x41], replacement + 'A'],
+			[[0xe1, 0x41, 0x42], replacement + 'AB'],
+			[[0xe1, 0x80, 0x41], replacement + 'A'],
+			[[0xf1, 0x41, 0x42, 0x43], replacement + 'ABC'],
+			[[0xf1, 0x80, 0x41, 0x42], replacement + 'AB'],
+			[[0xf1, 0x80, 0x80, 0x41], replacement + 'A'],
+		];
+		for (const [bytes, expected] of strings) {
+			const payload = Buffer.from([0xa0 + bytes.length, ...bytes]);
+			assert.equal(unpack(payload), expected);
+		}
+	});
+	test('truncated UTF-8 sequences do not consume following values', function () {
+		assert.deepEqual(unpack(Buffer.from([0x92, 0xa1, 0xc2, 0x01])), ['\uFFFD', 1]);
+		assert.deepEqual(unpack(Buffer.from([0x92, 0xa2, 0xe1, 0x80, 0x01])), ['\uFFFD', 1]);
+		assert.deepEqual(unpack(Buffer.from([0x92, 0xa3, 0xf1, 0x80, 0x80, 0x01])), ['\uFFFD', 1]);
+		assert.deepEqual(
+			unpack(Buffer.from([0x93, 0xa1, 0xe0, 0xa4, 0x6e, 0x65, 0x78, 0x74, 0x07])),
+			['\uFFFD', 'next', 7]
+		);
+	});
 	test('use ArrayBuffer', function () {
 		const data = {prop: 'a test'};
 		var serialized = pack(data);
